@@ -27,11 +27,11 @@ The crunched PRG files should have a BASIC SYS line at $0801 to run the program 
 
 ![gyrospeedwin-processing](https://github.com/Stat-Mat/GyrospeedWin/blob/master/gyrospeedwin-processing.jpg)
 
-![gyrospeedwin-loading-effect-0](https://github.com/GyrospeedWin/blob/master/gyrospeedwin-loading-effect-0.jpg) ![gyrospeedwin-loading-effect-2](https://github.com/GyrospeedWin/blob/master/gyrospeedwin-loading-effect-2.jpg)
+![gyrospeedwin-loading-effect-0](https://github.com/Stat-Mat/GyrospeedWin/blob/master/gyrospeedwin-loading-effect-0.jpg) ![gyrospeedwin-loading-effect-2](https://github.com/Stat-Mat/GyrospeedWin/blob/master/gyrospeedwin-loading-effect-2.jpg)
 
-![gyrospeedwin-loading-effect-6](https://github.com/GyrospeedWin/blob/master/gyrospeedwin-loading-effect-6.jpg) ![gyrospeedwin-loading-effect-7](https://github.com/GyrospeedWin/blob/master/gyrospeedwin-loading-effect-7.jpg)
+![gyrospeedwin-loading-effect-6](https://github.com/Stat-Mat/GyrospeedWin/blob/master/gyrospeedwin-loading-effect-6.jpg) ![gyrospeedwin-loading-effect-7](https://github.com/Stat-Mat/GyrospeedWin/blob/master/gyrospeedwin-loading-effect-7.jpg)
 
-![gyrospeedwin-loading-effect-8](https://github.com/GyrospeedWin/blob/master/gyrospeedwin-loading-effect-8.jpg) ![gyrospeedwin-loading-effect-9](https://github.com/GyrospeedWin/blob/master/gyrospeedwin-loading-effect-9.jpg)
+![gyrospeedwin-loading-effect-8](https://github.com/Stat-Mat/GyrospeedWin/blob/master/gyrospeedwin-loading-effect-8.jpg) ![gyrospeedwin-loading-effect-9](https://github.com/Stat-Mat/GyrospeedWin/blob/master/gyrospeedwin-loading-effect-9.jpg)
 
 ## Thanks
 
