@@ -380,3 +380,9 @@ $RECYCLE.BIN/
 
 # JetBrains Rider IDE files
 .idea/
+
+# =========================
+# Project specific
+# =========================
+
+!/releases
