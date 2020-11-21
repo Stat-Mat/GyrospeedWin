@@ -101,14 +101,20 @@ namespace GyrospeedWin {
                 }
 
                 FileSystemInfo[] fileSysInfo;
+                var pathToWriteTapFiles = string.Empty;
 
                 if(isFolder) {
                     var dirInfo = new DirectoryInfo(args[0]);
                     fileSysInfo = dirInfo.EnumerateFileSystemInfos("*.prg").Where(f => f is FileInfo).ToArray();
+                    pathToWriteTapFiles = Path.Combine(exePath, $"{dirInfo.Name}-TAPs");
                 }
                 else {
                     fileSysInfo = new FileSystemInfo[] { new FileInfo(args[0]) };
+                    pathToWriteTapFiles = $"{fileSysInfo[0].FullName}-TAP";
                 }
+
+                // Create the output folder for the TAP file(s)
+                Directory.CreateDirectory(pathToWriteTapFiles);
 
                 Console.WriteLine("\nPlease enter desired loading effect:\n");
                 Console.WriteLine("0 - Original                   5 - Medium Stripes");
@@ -252,7 +258,7 @@ namespace GyrospeedWin {
                     // Start at index 2 because first two bytes are the load address ($02bc)
                     var gyroBootBufCheckSum = CalcXorChecksum(gyroBootBuf, 2);
 
-                    using(var tapStream = File.Open(Path.Combine(exePath, $"{fileNameWithoutExtension}.tap"), FileMode.Create))
+                    using(var tapStream = File.Open(Path.Combine(pathToWriteTapFiles, $"{fileNameWithoutExtension}.tap"), FileMode.Create))
                     using(var binWriter = new BinaryWriter(tapStream)) {
 
                         // Write the TAP file header
@@ -541,8 +547,7 @@ namespace GyrospeedWin {
         }
 
         static string GetExecutingDirectory() {
-            var location = new Uri(Assembly.GetEntryAssembly().GetName().CodeBase);
-            return new FileInfo(location.AbsolutePath).Directory.FullName;
+            return AppDomain.CurrentDomain.BaseDirectory;
         }
     }
 }
