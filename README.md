@@ -12,6 +12,8 @@ The original Gyrospeed program was included as a type-in listing in the April 19
 
 GyrospeedWin \<crunched-prg-file> -or- \<folder-containing-crunched-prgs>
 
+Alternatively, you can simply drag and drop a PRG file or folder containing PRG files onto the executable filename in Windows Explorer.
+
 The crunched PRG files should have a BASIC SYS line at $0801 to run the program (e.g. crunched with Exomizer etc) and can be loaded into the address range $0400 - $cfff.
 
 ## Features
