@@ -18,10 +18,6 @@ namespace GyrospeedWin {
         const byte MEDIUM_PULSE = 0x42;
         const byte LONG_PULSE = 0x56;
 
-        // Gyrospeed turbo pulse values
-        const byte GYROSPEED_BIT_OFF = 0x15;
-        const byte GYROSPEED_BIT_ON = 0x2a;
-
         // The standard pilot lengths for the CBM and data headers
         const int NUM_PULSES_FOR_CBM_HEADER_PILOT = 0x6a00;
         const int NUM_PULSES_FOR_DATA_HEADER_PILOT = 0x1500;
@@ -34,15 +30,31 @@ namespace GyrospeedWin {
         static readonly byte[] syncChain = new byte[] { 0x89, 0x88, 0x87, 0x86, 0x85, 0x84, 0x83, 0x82, 0x81 };
         static readonly byte[] syncRepeatChain = new byte[] { 0x09, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01 };
 
+        // The max filename length in the CBM header
+        const int CBM_HEADER_MAX_FILENAME_LENGTH = 16;
+
+        // These are the characters which can be used in a BASIC string to clear the screen (CHR$(147)) and change the text colour to white (CHR$(5))
+        // They are inserted at the start of the filename in the CBM header to alter the appearance of the found message
+        static readonly byte[] clearScreenAndSetTextColourToWhite = new byte[] { 0x93, 0x05 };
+
         // The number of clock cycles to stipulate in the TAP file when inserting a gap pause (silence) between blocks (roughly 330ms)
         const int NUM_CLOCK_CYCLES_FOR_GAP_PAUSE = 0x50000;
 
         // The number of clock cycles to stipulate in the TAP file when inserting the end pause (silence) (roughly 5 seconds)
         const int NUM_CLOCK_CYCLES_FOR_END_PAUSE = 0x4b2b20;
 
-        // These are the characters which can be used in a BASIC string to clear the screen (CHR$(147)) and change the text colour to white (CHR$(5))
-        // They are inserted at the start of the filename in the CBM header to alter the appearance of the found message
-        static readonly byte[] clearScreenAndSetTextColourToWhite = new byte[] { 0x93, 0x05 };
+        // The filename of the CBM header containing the Gyrospeed loader code (built from gyrospeed-header.asm)
+        const string GYROSPEED_HEADER_FILENAME = "gyrospeed-header.prg";
+
+        // The offset of the loading bars/border flashing effect routine in gyrospeed-header.prg
+        const int GYROSPEED_HEADER_LOADING_EFFECT_ROUTINE_OFFSET = 0xa6;
+
+        // The filename of the data header containing the Gyrospeed boot code (built from gyrospeed-boot.asm)
+        const string GYROSPEED_BOOT_FILENAME = "gyrospeed-boot.prg";
+
+        // Gyrospeed turbo pulse values
+        const byte GYROSPEED_OFF_BIT = 0x15;
+        const byte GYROSPEED_ON_BIT = 0x2a;
 
         // The default BASIC start address
         const int BASIC_START_ADDRESS = 0x0801;
@@ -50,22 +62,26 @@ namespace GyrospeedWin {
         // The BASIC token for the SYS command
         const byte BASIC_SYS_TOKEN = 0x9e;
 
-        // The offset of the loading bars/border flashing effect routine in gyrospeed-header.prg
-        const int LOADING_EFFECT_ROUTINE_OFFSET = 0xa6;
-
         // The XOR checksum for the data loaded by the Gyrospeed loader
         static byte gyroSpeedCheckSum = 0;
-
-        // The filename of the CBM header containing the Gyrospeed loader code (built from gyrospeed-header.asm)
-        const string GyrospeedHeaderFileName = "gyrospeed-header.prg";
-
-        // The filename of the data header containing the Gyrospeed boot code (built from gyrospeed-boot.asm)
-        const string GyrospeedBootFileName = "gyrospeed-boot.prg";
 
         static readonly Version version = Assembly.GetExecutingAssembly().GetName().Version;
         static readonly string versionString = $"GyrospeedWin v{version.Major}.{version.Minor} - StatMat November 2020";
 
         static int Main(string[] args) {
+            int loadingEffectNum = 0;
+
+            bool isFolder = false;
+            bool useRandomLoadingEffect = false;
+            bool useClearScreenAndWhiteText = false;
+
+            string pathToWriteTapFiles = string.Empty;
+            string exePath = GetExecutingDirectory();
+
+            ConsoleKeyInfo key;
+            Random rnd = new Random(GetSeed());
+            FileSystemInfo[] fileSysInfo;
+
             try {
                 // basic argument check
                 if(args.Length == 0 || args.Length > 1 ||
@@ -80,28 +96,23 @@ namespace GyrospeedWin {
                     Environment.Exit(0);
                 }
 
-                var exePath = GetExecutingDirectory();
-
-                if(!File.Exists(Path.Combine(exePath, GyrospeedHeaderFileName))) {
-                    Console.WriteLine($"\nCannot find {GyrospeedHeaderFileName}!");
+                if(!File.Exists(Path.Combine(exePath, GYROSPEED_HEADER_FILENAME))) {
+                    Console.WriteLine($"\nCannot find {GYROSPEED_HEADER_FILENAME}!");
                     WaitForKeyAndExit();
                 }
 
-                if(!File.Exists(Path.Combine(exePath, GyrospeedBootFileName))) {
-                    Console.WriteLine($"\nCannot find {GyrospeedBootFileName}!");
+                if(!File.Exists(Path.Combine(exePath, GYROSPEED_BOOT_FILENAME))) {
+                    Console.WriteLine($"\nCannot find {GYROSPEED_BOOT_FILENAME}!");
                     WaitForKeyAndExit();
                 }
 
-                var isFolder = Directory.Exists(args[0]);
+                isFolder = Directory.Exists(args[0]);
 
                 if(!isFolder &&
                     !File.Exists(args[0])) {
                     Console.WriteLine("\nParameter is neither a valid file or folder!");
                     WaitForKeyAndExit();
                 }
-
-                FileSystemInfo[] fileSysInfo;
-                var pathToWriteTapFiles = string.Empty;
 
                 if(isFolder) {
                     var dirInfo = new DirectoryInfo(args[0]);
@@ -116,38 +127,43 @@ namespace GyrospeedWin {
                 // Create the output folder for the TAP file(s)
                 Directory.CreateDirectory(pathToWriteTapFiles);
 
-                Console.WriteLine("\nPlease enter desired loading effect:\n");
+                Console.WriteLine("\nPlease choose desired loading effect:\n");
                 Console.WriteLine("0 - Original                   5 - Medium Stripes");
                 Console.WriteLine("1 - Original Double Height     6 - Thick Stripes");
                 Console.WriteLine("2 - Freeload Style             7 - Black and White");
                 Console.WriteLine("3 - Freeload Alt Style         8 - Jolly Stripes");
                 Console.WriteLine("4 - Stripe Columns             9 - Mixed Up");
-                Console.WriteLine("\nR - use a random effect " + (fileSysInfo.Length > 1 ? "for each PRG file" : "") + "\n");
+                Console.WriteLine("\nR - use a random effect " + (fileSysInfo.Length > 1 ? "for each PRG file" : ""));
 
-                var loadingEffectNum = 0;
-                ConsoleKeyInfo key;
-
+                // Ask user for their effect choice
                 do {
                     key = Console.ReadKey(true);
                 }
-                while(key.KeyChar < '0' || key.KeyChar > '9' && char.ToLower(key.KeyChar) != 'r');
+                while(key.KeyChar < '0' || key.KeyChar > '9' && key.Key != ConsoleKey.R);
 
-                var useRandomLoadingEffect = false;
-
-                if(char.ToLower(key.KeyChar) != 'r') {
+                if(key.Key != ConsoleKey.R) {
                     loadingEffectNum = key.KeyChar - '0';
                 }
                 else {
                     useRandomLoadingEffect = true;
                 }
 
-                var rnd = new Random(GetSeed());
+                // Ask user for their found message style choice
+                Console.WriteLine("\nPlease choose desired found message style:\n");
+                Console.WriteLine("0 - Standard (original)        1 - Clear screen with white text");
+
+                do {
+                    key = Console.ReadKey(true);
+                }
+                while(key.KeyChar < '0' || key.KeyChar > '1');
+
+                useClearScreenAndWhiteText = key.KeyChar == '1';
 
                 // Read in Gyrospeed boot routine file
                 // This routine is called after the headers have been loaded as it hijacks the BASIC idle loop vector at $0302.
                 // It then calls the loader code stored in the CBM header at offset $0351. It then finally starts
                 // the program after the turbo load has finished by performing a BASIC RUN.
-                var gyroBootBuf = File.ReadAllBytes(Path.Combine(exePath, GyrospeedBootFileName));
+                var gyroBootBuf = File.ReadAllBytes(Path.Combine(exePath, GYROSPEED_BOOT_FILENAME));
 
                 foreach(var file in fileSysInfo) {
                     Console.Write($"Processing {file.Name} - ");
@@ -226,27 +242,34 @@ namespace GyrospeedWin {
                             break;
                     }
 
+                    // The filename length is determined by whether the user has selected the standard found message, or the clear
+                    // screen with white text. This is because the latter uses two character codes to clear the screen and set the
+                    // text colour to white, therefore only leaving 14 characters for the filename itself. Otherwise allow the full 16.
+                    var fileNameLength = CBM_HEADER_MAX_FILENAME_LENGTH - (useClearScreenAndWhiteText ? clearScreenAndSetTextColourToWhite.Length : 0);
+
                     var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(file.Name);
 
-                    // Just cheat and convert to uppercase so that it'll display correctly in PETSCII
-                    // Also strip off the "-[ex]" suffix if present (i.e. if this is a crunched PRG from the OneLoad64 collection)
+                    // Strip off the "-[ex]" suffix if present (i.e. if this is a crunched PRG from the OneLoad64 games collection)
                     var fileNameUpper = fileNameWithoutExtension.ToUpper().Replace("-[EX]", "");
 
-                    // Only allow a maximum of 14 characters, as these will be preceded by the two character codes to clear the screen and set the text colour
-                    fileNameUpper = fileNameUpper.Length >= 14 ? fileNameUpper.ToUpper().Substring(0, 14) : fileNameUpper.ToUpper();
+                    // Just cheat and convert to uppercase so that it'll display correctly in PETSCII
+                    fileNameUpper = fileNameUpper.Length >= fileNameLength ? fileNameUpper.ToUpper().Substring(0, fileNameLength) : fileNameUpper.ToUpper();
+                    var fileNameBytes = Encoding.UTF8.GetBytes(fileNameUpper);
 
-                    // Add the two character prefix to clear the screen and set the text colour to white
-                    var fileNameBytes = clearScreenAndSetTextColourToWhite.Concat(Encoding.UTF8.GetBytes(fileNameUpper)).ToArray();
+                    if(useClearScreenAndWhiteText) {
+                    	// Add the two character prefix to clear the screen and set the text colour to white
+                        fileNameBytes = clearScreenAndSetTextColourToWhite.Concat(Encoding.UTF8.GetBytes(fileNameUpper)).ToArray();
+                    }
 
                     // Read in the CBM header containing the Gyrospeed loader
-                    var cbmHeaderBuf = File.ReadAllBytes(Path.Combine(exePath, GyrospeedHeaderFileName));
+                    var cbmHeaderBuf = File.ReadAllBytes(Path.Combine(exePath, GYROSPEED_HEADER_FILENAME));
 
                     // Insert the filename into the CBM header
                     Array.Copy(fileNameBytes, 0, cbmHeaderBuf, 7, fileNameBytes.Length);
 
                     // Overwrite the original loading effect if needed
                     if(loadingEffect != null) {
-                        Array.Copy(loadingEffect, 0, cbmHeaderBuf, LOADING_EFFECT_ROUTINE_OFFSET, loadingEffect.Length);
+                        Array.Copy(loadingEffect, 0, cbmHeaderBuf, GYROSPEED_HEADER_LOADING_EFFECT_ROUTINE_OFFSET, loadingEffect.Length);
                     }
 
                     // Calculate the CBM header checksum
@@ -417,11 +440,11 @@ namespace GyrospeedWin {
                 for(var j = 7; j > -1; j--) {
                     // bit = 1
                     if((data & (1 << j)) != 0) {
-                        binWriter.Write(GYROSPEED_BIT_ON);
+                        binWriter.Write(GYROSPEED_ON_BIT);
                     }
                     // bit = 0
                     else {
-                        binWriter.Write(GYROSPEED_BIT_OFF);
+                        binWriter.Write(GYROSPEED_OFF_BIT);
                     }
                 }
 
