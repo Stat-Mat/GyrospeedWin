@@ -41,3 +41,4 @@ Special thanks go out to the following people for their contributions and suppor
 
 * ricky006 for introducing me to the original Gyrospeed program and providing invaluable testing on real hardware 
 * SLC (the author of TapEx) for his fantastic help with some questions I had about the .TAP format
+* Richard of TND for providing additional loading effects, including a couple of amusing ones! ;)
