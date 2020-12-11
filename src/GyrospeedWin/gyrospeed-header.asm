@@ -132,7 +132,7 @@ WaitForBit
 
 ; Loading effects can be upto 0x1c bytes in length
 ; They can freely use $fc, $fd or the X register (all of which are zeroed at start-up
-; and remain persitent between calls) and the accumulator (but not Y)
+; and remain persistent between calls) and the accumulator (but not Y)
 
 ; Entropy can come from:
 ; ($c1),y which points to last byte read

@@ -37,10 +37,10 @@ namespace GyrospeedWin {
         // They are inserted at the start of the filename in the CBM header to alter the appearance of the found message
         static readonly byte[] clearScreenAndSetTextColourToWhite = new byte[] { 0x93, 0x05 };
 
-        // The number of clock cycles to stipulate in the TAP file when inserting a gap pause (silence) between blocks (roughly 330ms)
+        // The number of clock cycles to stipulate in the TAP file when inserting a gap pause (silence) between blocks (roughly 330ms on a PAL machine)
         const int NUM_CLOCK_CYCLES_FOR_GAP_PAUSE = 0x50000;
 
-        // The number of clock cycles to stipulate in the TAP file when inserting the end pause (silence) (roughly 5 seconds)
+        // The number of clock cycles to stipulate in the TAP file when inserting the end pause (silence) (roughly 5 seconds on a PAL machine)
         const int NUM_CLOCK_CYCLES_FOR_END_PAUSE = 0x4b2b20;
 
         // The filename of the CBM header containing the Gyrospeed loader code (built from gyrospeed-header.asm)
@@ -66,7 +66,7 @@ namespace GyrospeedWin {
         static byte gyroSpeedCheckSum = 0;
 
         static readonly Version version = Assembly.GetExecutingAssembly().GetName().Version;
-        static readonly string versionString = $"GyrospeedWin v{version.Major}.{version.Minor} - StatMat November 2020";
+        static readonly string versionString = $"GyrospeedWin v{version.Major}.{version.Minor} - Written by StatMat";
 
         static int Main(string[] args) {
             int loadingEffectNum = 0;
@@ -127,30 +127,47 @@ namespace GyrospeedWin {
                 // Create the output folder for the TAP file(s)
                 Directory.CreateDirectory(pathToWriteTapFiles);
 
-                Console.WriteLine("\nPlease choose desired loading effect:\n");
-                Console.WriteLine("0 - Original                   5 - Medium Stripes");
-                Console.WriteLine("1 - Original Double Height     6 - Thick Stripes");
-                Console.WriteLine("2 - Freeload Style             7 - Black and White");
-                Console.WriteLine("3 - Freeload Alt Style         8 - Jolly Stripes");
-                Console.WriteLine("4 - Stripe Columns             9 - Mixed Up");
+                ClearConsoleAndWriteLine("\nPlease choose desired loading effect:\n");
+                Console.WriteLine("0 - Original                      5 - Medium Stripes");
+                Console.WriteLine("1 - Original Double Height        6 - Thick Stripes (US Gold Style)");
+                Console.WriteLine("2 - Freeload Style                7 - Black and White");
+                Console.WriteLine("3 - Freeload Alt Style            8 - Jolly Stripes");
+                Console.WriteLine("4 - Stripe Columns                9 - Mixed-Up (Rack It Style)");
+                Console.WriteLine("A - Hi-Tec Stripe Columns         F - Gremlin Style (Alt. World Games)");
+                Console.WriteLine("B - Black and Red Stripes         G - Firebird Black and Blue (Black Lamp Style)");
+                Console.WriteLine("C - Flashing with Flatulence      H - Two shades of grey with noise");
+                Console.WriteLine("D - Titus Black and Light Blue    I - Black and White Stripe Columns");
+                Console.WriteLine("E - Cruncher AB Depack FX         J - It's a sin!");
                 Console.WriteLine("\nR - use a random effect " + (fileSysInfo.Length > 1 ? "for each PRG file" : ""));
 
                 // Ask user for their effect choice
                 do {
                     key = Console.ReadKey(true);
-                }
-                while(key.KeyChar < '0' || key.KeyChar > '9' && key.Key != ConsoleKey.R);
 
-                if(key.Key != ConsoleKey.R) {
-                    loadingEffectNum = key.KeyChar - '0';
+                    if((key.KeyChar >= '0' && key.KeyChar <= '9') ||
+                        (key.Key >= ConsoleKey.A && key.Key <= ConsoleKey.J) ||
+                        key.Key == ConsoleKey.R) {
+                        // We have a valid selection, so just break out of the infinite loop
+                        break;
+                    }
+                }
+                while(true);
+
+                if(key.Key == ConsoleKey.R) {
+                    useRandomLoadingEffect = true;
                 }
                 else {
-                    useRandomLoadingEffect = true;
+                    if(key.KeyChar <= '9') {
+                        loadingEffectNum = (key.KeyChar - '0') - 1;
+                    }
+                    else {
+                        loadingEffectNum = ((key.Key - ConsoleKey.A) + 10) - 1;
+                    }
                 }
 
                 // Ask user for their found message style choice
-                Console.WriteLine("\nPlease choose desired found message style:\n");
-                Console.WriteLine("0 - Standard (original)        1 - Clear screen with white text");
+                ClearConsoleAndWriteLine("\nPlease choose desired found message style:\n");
+                Console.WriteLine("0 - Standard (original)    1 - Clear screen with white text");
 
                 do {
                     key = Console.ReadKey(true);
@@ -164,6 +181,8 @@ namespace GyrospeedWin {
                 // It then calls the loader code stored in the CBM header at offset $0351. It then finally starts
                 // the program after the turbo load has finished by performing a BASIC RUN.
                 var gyroBootBuf = File.ReadAllBytes(Path.Combine(exePath, GYROSPEED_BOOT_FILENAME));
+
+                Console.Clear();
 
                 foreach(var file in fileSysInfo) {
                     Console.Write($"Processing {file.Name} - ");
@@ -195,52 +214,19 @@ namespace GyrospeedWin {
 
                     Console.WriteLine($"found BASIC SYS line with jump address ${sysAddress:x4} ({sysAddress})");
 
-                    // If the user has selected random effects, then select one
+                    // If the user has selected random effects, then generate one
                     if(useRandomLoadingEffect) {
                         var randomLoadingEffectNum = 0;
 
                         do {
-                            randomLoadingEffectNum = rnd.Next(0, 10);
+                            randomLoadingEffectNum = rnd.Next(0, LoadingEffects.Styles.Length);
                         }
-                        while(randomLoadingEffectNum == loadingEffectNum) ;
+                        while(randomLoadingEffectNum == loadingEffectNum);
 
                         loadingEffectNum = randomLoadingEffectNum;
                     }
 
-                    byte[] loadingEffect = null;
-
-                    switch(loadingEffectNum) {
-                        case 0:
-                            // Nothing to do as this is already embedded in the gyrospeed-header.prg file
-                            break;
-                        case 1:
-                            loadingEffect = LoadingEffects.OriginalDoubleHeightLines;
-                            break;
-                        case 2:
-                            loadingEffect = LoadingEffects.FreeLoad;
-                            break;
-                        case 3:
-                            loadingEffect = LoadingEffects.FreeLoadAlternative;
-                            break;
-                        case 4:
-                            loadingEffect = LoadingEffects.StripeColumns;
-                            break;
-                        case 5:
-                            loadingEffect = LoadingEffects.MediumStripes;
-                            break;
-                        case 6:
-                            loadingEffect = LoadingEffects.ThickStripes;
-                            break;
-                        case 7:
-                            loadingEffect = LoadingEffects.BlackAndWhite;
-                            break;
-                        case 8:
-                            loadingEffect = LoadingEffects.JollyStripes;
-                            break;
-                        case 9:
-                            loadingEffect = LoadingEffects.MixedUp;
-                            break;
-                    }
+                    var loadingEffect = LoadingEffects.Styles[loadingEffectNum];
 
                     // The filename length is determined by whether the user has selected the standard found message, or the clear
                     // screen with white text. This is because the latter uses two character codes to clear the screen and set the
@@ -420,6 +406,11 @@ namespace GyrospeedWin {
             Environment.Exit(-1);
         }
 
+        static void ClearConsoleAndWriteLine(string text) {
+            Console.Clear();
+            Console.WriteLine(text);
+        }
+
         static byte CalcXorChecksum(byte[] buf, int startIndex) {
             if(startIndex > buf.Length - 1) {
                 throw new ArgumentException("Start index is outside the bounds of the array.");
@@ -440,11 +431,11 @@ namespace GyrospeedWin {
                 for(var j = 7; j > -1; j--) {
                     // bit = 1
                     if((data & (1 << j)) != 0) {
-                        binWriter.Write(GYROSPEED_ON_BIT);
+                        WriteGyrospeedOnBit(binWriter);
                     }
                     // bit = 0
                     else {
-                        binWriter.Write(GYROSPEED_OFF_BIT);
+                        WriteGyrospeedOffBit(binWriter);
                     }
                 }
 
@@ -453,9 +444,7 @@ namespace GyrospeedWin {
             }
             // Write standard CBM pulses
             else {
-                // New data marker
-                binWriter.Write(LONG_PULSE);
-                binWriter.Write(MEDIUM_PULSE);
+                WriteNewDataMarker(binWriter);
 
                 bool checkbit = true;
                 int bits;
@@ -465,24 +454,20 @@ namespace GyrospeedWin {
                     if((data & (1 << bits)) != 0) {
                         checkbit = !checkbit;
 
-                        binWriter.Write(MEDIUM_PULSE);
-                        binWriter.Write(SHORT_PULSE);
+                        WriteOnBit(binWriter);
                     }
                     // bit = 0
                     else {
-                        binWriter.Write(SHORT_PULSE);
-                        binWriter.Write(MEDIUM_PULSE);
+                        WriteOffBit(binWriter);
                     }
                 }
 
                 // Write the checkbit (parity)
                 if(checkbit) {
-                    binWriter.Write(MEDIUM_PULSE);
-                    binWriter.Write(SHORT_PULSE);
+                    WriteOnBit(binWriter);
                 }
                 else {
-                    binWriter.Write(SHORT_PULSE);
-                    binWriter.Write(MEDIUM_PULSE);
+                    WriteOffBit(binWriter);
                 }
             }
         }
@@ -512,9 +497,32 @@ namespace GyrospeedWin {
             binWriter.Write((byte)((clockCycles >> 16) & 0xff));
         }
 
+        static void WriteNewDataMarker(BinaryWriter binWriter) {
+            binWriter.Write(LONG_PULSE);
+            binWriter.Write(MEDIUM_PULSE);
+        }
+
         static void WriteEndOfDataMarker(BinaryWriter binWriter) {
             binWriter.Write(LONG_PULSE);
             binWriter.Write(SHORT_PULSE);
+        }
+
+        static void WriteOnBit(BinaryWriter binWriter) {
+            binWriter.Write(MEDIUM_PULSE);
+            binWriter.Write(SHORT_PULSE);
+        }
+
+        static void WriteOffBit(BinaryWriter binWriter) {
+            binWriter.Write(SHORT_PULSE);
+            binWriter.Write(MEDIUM_PULSE);
+        }
+
+        static void WriteGyrospeedOnBit(BinaryWriter binWriter) {
+            binWriter.Write(GYROSPEED_ON_BIT);
+        }
+
+        static void WriteGyrospeedOffBit(BinaryWriter binWriter) {
+            binWriter.Write(GYROSPEED_OFF_BIT);
         }
 
         static int FindSys(byte[] buf, int basicStartOffset) {
