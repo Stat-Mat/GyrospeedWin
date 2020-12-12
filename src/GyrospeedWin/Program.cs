@@ -31,7 +31,7 @@ namespace GyrospeedWin {
         static readonly byte[] syncRepeatChain = new byte[] { 0x09, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01 };
 
         // The max filename length in the CBM header
-        const int CBM_HEADER_MAX_FILENAME_LENGTH = 16;
+        const int CBM_HEADER_MAX_FILENAME_LENGTH = 0x10;
 
         // These are the characters which can be used in a BASIC string to clear the screen (CHR$(147)) and change the text colour to white (CHR$(5))
         // They are inserted at the start of the filename in the CBM header to alter the appearance of the found message
@@ -158,10 +158,10 @@ namespace GyrospeedWin {
                 }
                 else {
                     if(key.KeyChar <= '9') {
-                        loadingEffectNum = (key.KeyChar - '0') - 1;
+                        loadingEffectNum = key.KeyChar - '0';
                     }
                     else {
-                        loadingEffectNum = ((key.Key - ConsoleKey.A) + 10) - 1;
+                        loadingEffectNum = (key.Key - ConsoleKey.A) + 10;
                     }
                 }
 
@@ -175,6 +175,13 @@ namespace GyrospeedWin {
                 while(key.KeyChar < '0' || key.KeyChar > '1');
 
                 useClearScreenAndWhiteText = key.KeyChar == '1';
+
+                // Read in the CBM header containing the Gyrospeed loader
+                var cbmHeaderBuf = File.ReadAllBytes(Path.Combine(exePath, GYROSPEED_HEADER_FILENAME));
+
+                // Create a byte array containing a sufficient number of spaces which can be used to blank out both
+                // file names and loading effect code in the header buf allowing it to be re-used for multiple files
+                var blankingBytes = Encoding.ASCII.GetBytes(string.Empty.PadLeft(cbmHeaderBuf.Length - GYROSPEED_HEADER_LOADING_EFFECT_ROUTINE_OFFSET, ' '));
 
                 // Read in Gyrospeed boot routine file
                 // This routine is called after the headers have been loaded as it hijacks the BASIC idle loop vector at $0302.
@@ -247,14 +254,13 @@ namespace GyrospeedWin {
                         fileNameBytes = clearScreenAndSetTextColourToWhite.Concat(Encoding.UTF8.GetBytes(fileNameUpper)).ToArray();
                     }
 
-                    // Read in the CBM header containing the Gyrospeed loader
-                    var cbmHeaderBuf = File.ReadAllBytes(Path.Combine(exePath, GYROSPEED_HEADER_FILENAME));
-
                     // Insert the filename into the CBM header
+                    Array.Copy(blankingBytes, 0, cbmHeaderBuf, 7, CBM_HEADER_MAX_FILENAME_LENGTH);
                     Array.Copy(fileNameBytes, 0, cbmHeaderBuf, 7, fileNameBytes.Length);
 
                     // Overwrite the original loading effect if needed
                     if(loadingEffect != null) {
+                        Array.Copy(blankingBytes, 0, cbmHeaderBuf, GYROSPEED_HEADER_LOADING_EFFECT_ROUTINE_OFFSET, cbmHeaderBuf.Length - GYROSPEED_HEADER_LOADING_EFFECT_ROUTINE_OFFSET);
                         Array.Copy(loadingEffect, 0, cbmHeaderBuf, GYROSPEED_HEADER_LOADING_EFFECT_ROUTINE_OFFSET, loadingEffect.Length);
                     }
 

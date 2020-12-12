@@ -11,6 +11,14 @@
     static class LoadingEffects {
         public static readonly byte[][] Styles = new byte[][] {
 
+            // Original style
+            //      inc $d020
+            //      rts
+
+            new byte[] {
+                0xEE, 0x20, 0xD0, 0x60
+            },
+
             // Original style with double height Lines
             //      txa
             //      eor #$01
