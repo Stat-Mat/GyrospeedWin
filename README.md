@@ -20,7 +20,9 @@ The crunched PRG files should have a BASIC SYS line at $0801 to run the program 
 
 * Fixes the issue with the original Gyrospeed where it did not clear the keyboard buffer before starting the crunched program
 * Supports processing either a single PRG file or batch processing all PRGs in a given folder (drag and drop)
+* Can automatically build optimised compilation TAP files based on a given cassette tape length in minutes 
 * Supports 10 different loading effects such as the classsic FreeLoad colour cycling from the Ocean Loader, as well an option for randomised effect selection
+* Supports both the standard and clear screen with white-text found message styles
 * Includes full C# and 6502 assembly sourcecode
 
 ## Screenshots
@@ -42,3 +44,4 @@ Special thanks go out to the following people for their contributions and suppor
 * ricky006 for introducing me to the original Gyrospeed program and providing invaluable testing on real hardware 
 * SLC (the author of TapEx) for his fantastic help with some questions I had about the .TAP format
 * Richard of TND for providing additional loading effects, including a couple of amusing ones! ;)
+* Neo-Rio for suggestions and nagging me to get the updated version released! :p

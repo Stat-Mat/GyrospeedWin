@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace GyrospeedWin {
     class Program {
@@ -37,6 +38,9 @@ namespace GyrospeedWin {
         // They are inserted at the start of the filename in the CBM header to alter the appearance of the found message
         static readonly byte[] clearScreenAndSetTextColourToWhite = new byte[] { 0x93, 0x05 };
 
+        // The CPU frequency on a PAL machine is derived from the PAL C64 VIC-II colour clock frequency of 17.734475 MHz / 18
+        const double PAL_CPU_FREQUENCY_IN_HZ = 985248;
+
         // The number of clock cycles to stipulate in the TAP file when inserting a gap pause (silence) between blocks (roughly 330ms on a PAL machine)
         const int NUM_CLOCK_CYCLES_FOR_GAP_PAUSE = 0x50000;
 
@@ -62,6 +66,8 @@ namespace GyrospeedWin {
         // The BASIC token for the SYS command
         const byte BASIC_SYS_TOKEN = 0x9e;
 
+        static double prgFileLengthInSeconds = 0;
+
         // The XOR checksum for the data loaded by the Gyrospeed loader
         static byte gyroSpeedCheckSum = 0;
 
@@ -70,8 +76,11 @@ namespace GyrospeedWin {
 
         static int Main(string[] args) {
             int loadingEffectNum = 0;
+            int compilationTapeLength = 0;
 
             bool isFolder = false;
+            bool buildCompilationTapFiles = false;
+            bool buildIndividualTapFiles = false;
             bool useRandomLoadingEffect = false;
             bool useClearScreenAndWhiteText = false;
 
@@ -80,7 +89,7 @@ namespace GyrospeedWin {
 
             ConsoleKeyInfo key;
             Random rnd = new Random(GetSeed());
-            FileSystemInfo[] fileSysInfo;
+            PrgFile[] prgFiles = null;
 
             try {
                 // basic argument check
@@ -116,12 +125,52 @@ namespace GyrospeedWin {
 
                 if(isFolder) {
                     var dirInfo = new DirectoryInfo(args[0]);
-                    fileSysInfo = dirInfo.EnumerateFileSystemInfos("*.prg").Where(f => f is FileInfo).ToArray();
+
+                    prgFiles = dirInfo.EnumerateFileSystemInfos("*.prg")
+                    .Where(f => f is FileInfo)
+                    .Select(
+                        f => {
+                            return new PrgFile {
+                                Path = f.FullName,
+                                Name = f.Name,
+                                Size = ((FileInfo)f).Length
+                            };
+                        }
+                    )
+                    .ToArray();
+
+                    if(prgFiles.Length == 0) {
+                        Console.WriteLine("\nInput folder does not contain any PRG files!");
+                        WaitForKeyAndExit();
+                    }
+                    else {
+                        if(AskYesOrNo("Multiple PRG files detected in input folder. Would you like to build compilation TAP files?")) {
+                            buildCompilationTapFiles = true;
+
+                            // Keep asking for a length until it's a valid integer
+                            do {
+                                ClearConsoleAndWriteLine("\nPlease enter desired tape length in minutes (e.g. C60 = 60):");
+                            }
+                            while(!int.TryParse(Console.ReadLine(), out compilationTapeLength));
+
+                            buildIndividualTapFiles = AskYesOrNo("Would you like to also build individual TAP files?");
+                        }
+                    }
+
                     pathToWriteTapFiles = Path.Combine(exePath, $"{dirInfo.Name}-TAPs");
                 }
                 else {
-                    fileSysInfo = new FileSystemInfo[] { new FileInfo(args[0]) };
-                    pathToWriteTapFiles = $"{fileSysInfo[0].FullName}-TAP";
+                    var fileInfo = new FileInfo(args[0]);
+
+                    prgFiles = new PrgFile[] {
+                        new PrgFile {
+                            Path = fileInfo.FullName,
+                            Name = fileInfo.Name,
+                            Size = fileInfo.Length
+                        }
+                    };
+
+                    pathToWriteTapFiles = $"{prgFiles[0].Path}-TAP";
                 }
 
                 // Create the output folder for the TAP file(s)
@@ -138,7 +187,7 @@ namespace GyrospeedWin {
                 Console.WriteLine("C - Flashing with Flatulence      H - Two shades of grey with noise");
                 Console.WriteLine("D - Titus Black and Light Blue    I - Black and White Stripe Columns");
                 Console.WriteLine("E - Cruncher AB Depack FX         J - It's a sin!");
-                Console.WriteLine("\nR - use a random effect " + (fileSysInfo.Length > 1 ? "for each PRG file" : ""));
+                Console.WriteLine("\nR - use a random effect " + (prgFiles.Length > 1 ? "for each PRG file" : ""));
 
                 // Ask user for their effect choice
                 do {
@@ -191,11 +240,11 @@ namespace GyrospeedWin {
 
                 Console.Clear();
 
-                foreach(var file in fileSysInfo) {
+                foreach(var file in prgFiles) {
                     Console.Write($"Processing {file.Name} - ");
 
                     // Read in crunched PRG
-                    var crunchedPrgBuf = File.ReadAllBytes(file.FullName);
+                    var crunchedPrgBuf = File.ReadAllBytes(file.Path);
 
                     // Read the load address
                     var crunchedPrgLoadAdress = (ushort)(crunchedPrgBuf[1] << 8 | crunchedPrgBuf[0]);
@@ -240,13 +289,17 @@ namespace GyrospeedWin {
                     // text colour to white, therefore only leaving 14 characters for the filename itself. Otherwise allow the full 16.
                     var fileNameLength = CBM_HEADER_MAX_FILENAME_LENGTH - (useClearScreenAndWhiteText ? clearScreenAndSetTextColourToWhite.Length : 0);
 
-                    var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(file.Name);
-
                     // Strip off the "-[ex]" suffix if present (i.e. if this is a crunched PRG from the OneLoad64 games collection)
-                    var fileNameUpper = fileNameWithoutExtension.ToUpper().Replace("-[EX]", "");
+                    file.FileNameWithoutExtension = Regex.Replace(Path.GetFileNameWithoutExtension(file.Name), "-\\[ex\\]", "", RegexOptions.IgnoreCase);
 
                     // Just cheat and convert to uppercase so that it'll display correctly in PETSCII
-                    fileNameUpper = fileNameUpper.Length >= fileNameLength ? fileNameUpper.ToUpper().Substring(0, fileNameLength) : fileNameUpper.ToUpper();
+                    var fileNameUpper = file.FileNameWithoutExtension.ToUpper();
+
+                    // Trim to available characters if necessary
+                    if(fileNameUpper.Length > fileNameLength) {
+                        fileNameUpper = fileNameUpper.Substring(0, fileNameLength);
+                    }
+
                     var fileNameBytes = Encoding.UTF8.GetBytes(fileNameUpper);
 
                     if(useClearScreenAndWhiteText) {
@@ -273,20 +326,23 @@ namespace GyrospeedWin {
                     // Start at index 2 because first two bytes are the load address ($02bc)
                     var gyroBootBufCheckSum = CalcXorChecksum(gyroBootBuf, 2);
 
-                    using(var tapStream = File.Open(Path.Combine(pathToWriteTapFiles, $"{fileNameWithoutExtension}.tap"), FileMode.Create))
+                    file.TapPath = Path.Combine(pathToWriteTapFiles, $"{file.FileNameWithoutExtension}.tap");
+
+                    using(var tapStream = File.Open(file.TapPath, FileMode.Create))
                     using(var binWriter = new BinaryWriter(tapStream)) {
-
                         // Write the TAP file header
-                        binWriter.Write(TAP_FILE_MAGIC.ToCharArray());
-                        binWriter.Write(TAP_FILE_VERSION);
+                        binWriter.Write(TAP_FILE_MAGIC.ToCharArray()); // 12 bytes
+                        binWriter.Write(TAP_FILE_VERSION); // 1 byte
 
-                        // Reserved
+                        // Reserved (3 bytes)
                         binWriter.Write((byte)0x00);
                         binWriter.Write((byte)0x00);
                         binWriter.Write((byte)0x00);
 
                         // Data size - zero for now - will get updated after the complete TAP file has been written
-                        binWriter.Write(0x00);
+                        binWriter.Write(0x00); // 4 bytes
+
+                        prgFileLengthInSeconds = 0;
 
                         // Write CBM header pilot
                         WritePilotOrTrailer(binWriter, NUM_PULSES_FOR_CBM_HEADER_PILOT);
@@ -391,10 +447,19 @@ namespace GyrospeedWin {
                         WritePause(binWriter, NUM_CLOCK_CYCLES_FOR_END_PAUSE);
 
                         // Update the file length field in the TAP file header
-                        var fileLength = tapStream.Position - TAP_FILE_HEADER_SIZE;
+                        file.TapDataSize = tapStream.Position - TAP_FILE_HEADER_SIZE;
                         tapStream.Seek(TAP_FILE_DATA_LENGTH_OFFSET, SeekOrigin.Begin);
-                        binWriter.Write((int)fileLength);
+                        binWriter.Write((int)file.TapDataSize);
                     }
+
+                    file.TapDurationInSeconds = prgFileLengthInSeconds;
+                    Console.WriteLine($"  Running length: {TimeSpan.FromSeconds(prgFileLengthInSeconds):mm\\:ss}");
+                }
+
+                // Join the created TAP files into compilations if requested by the user
+                if(buildCompilationTapFiles) {
+                    Console.Write($"\nBuilding compilations...");
+                    BuildCompilations(prgFiles, pathToWriteTapFiles, compilationTapeLength, buildIndividualTapFiles);
                 }
 
                 return 0;
@@ -405,6 +470,118 @@ namespace GyrospeedWin {
             }
 
             return -1;
+        }
+
+        static void BuildCompilations(PrgFile[] prgFiles, string pathToWriteTapFiles, int compilationTapeLength, bool keepIndividualTapFiles) {
+            // Find the best way to distribute the PRG files across tapes of the provided length using a simple offline bin packing algorithm
+            var cassetteSidesRequired = BinPacking.BestFitDecreasing(prgFiles, (compilationTapeLength / 2) * 60);
+
+            var cassetteId = 1;
+
+            for(var i = 0; i < cassetteSidesRequired; i += 2) {
+                var cassetteName = $"C64 Compilation Cassette #{cassetteId}";
+
+                // Get the items assigned to the current two sides of a cassette
+                var sideAPrgFiles = prgFiles.Where(p => p.BinNumber == i).ToArray();
+                var sideBPrgFiles = prgFiles.Where(p => p.BinNumber == i + 1).ToArray();
+
+                // Sort the items on each side alphabetically
+                Array.Sort(sideAPrgFiles, (prg1, prg2) => StringComparer.InvariantCultureIgnoreCase.Compare(prg1.FileNameWithoutExtension, prg2.FileNameWithoutExtension));
+                Array.Sort(sideBPrgFiles, (prg1, prg2) => StringComparer.InvariantCultureIgnoreCase.Compare(prg1.FileNameWithoutExtension, prg2.FileNameWithoutExtension));
+
+                // Now join the tap files into combined TAP files representing each side of the cassette
+                JoinTapFiles(sideAPrgFiles, Path.Combine(pathToWriteTapFiles, $"{cassetteName} - Side A.tap"));
+                JoinTapFiles(sideBPrgFiles, Path.Combine(pathToWriteTapFiles, $"{cassetteName} - Side B.tap"));
+
+                // Output a file listing the contents of both sides
+                using(var outputFile = new StreamWriter(Path.Combine(pathToWriteTapFiles, $"{cassetteName} - Contents.txt"))) {
+                    var longestNumberOfItems = sideAPrgFiles.Count() > sideBPrgFiles.Count() ? sideAPrgFiles.Count() : sideBPrgFiles.Count();
+                    var longestSideAItemName = sideAPrgFiles.OrderByDescending(p => p.FileNameWithoutExtension.Length).First().FileNameWithoutExtension.Length;
+                    var sideHeadingsPadding = string.Empty.PadRight(longestSideAItemName + 4 - 6);
+
+                    outputFile.WriteLine();
+                    outputFile.WriteLine(cassetteName);
+                    outputFile.WriteLine();
+                    outputFile.WriteLine($"Side A{sideHeadingsPadding}Side B");
+                    outputFile.WriteLine($"------{sideHeadingsPadding}------");
+                    outputFile.WriteLine();
+
+                    for(var j = 0; j < longestNumberOfItems; j++) {
+                        if(sideAPrgFiles.Count() >= j + 1) {
+                            outputFile.Write($"{sideAPrgFiles.ElementAt(j).FileNameWithoutExtension}".PadRight(longestSideAItemName + 4));
+                        }
+
+                        if(sideBPrgFiles.Count() >= j + 1) {
+                            // Add padding if there isn't an item at this index on side A
+                            if(sideAPrgFiles.Count() < j + 1) {
+                                outputFile.Write(string.Empty.PadLeft(longestSideAItemName + 4));
+                            }
+
+                            outputFile.Write($"{sideBPrgFiles.ElementAt(j).FileNameWithoutExtension}");
+                        }
+
+                        outputFile.WriteLine();
+                    }
+
+                    outputFile.WriteLine();
+                    outputFile.WriteLine($"Length{sideHeadingsPadding}Length");
+                    outputFile.WriteLine($"------{sideHeadingsPadding}------");
+                    outputFile.WriteLine();
+                    outputFile.WriteLine($"{TimeSpan.FromSeconds(sideAPrgFiles.Sum(p => p.TapDurationInSeconds)):mm\\:ss} {sideHeadingsPadding}{TimeSpan.FromSeconds(sideBPrgFiles.Sum(p => p.TapDurationInSeconds)):mm\\:ss}");
+                }
+
+                cassetteId++;
+            }
+
+            // If the user didn't want individual TAP files too, then delete them now that we've finished building the compilations
+            if(!keepIndividualTapFiles) {
+                foreach(var file in prgFiles) {
+                    File.Delete(file.TapPath);
+                }
+            }
+        }
+
+        static void JoinTapFiles(PrgFile[] prgFiles, string tapFileName) {
+            // If there are no PRG files in the list, then just return
+            if(prgFiles.Length == 0) {
+                return;
+            }
+
+            using(var tapStream = File.Open(tapFileName, FileMode.Create))
+            using(var binWriter = new BinaryWriter(tapStream)) {
+                // Write the TAP file header
+                binWriter.Write(TAP_FILE_MAGIC.ToCharArray()); // 12 bytes
+                binWriter.Write(TAP_FILE_VERSION); // 1 byte
+
+                // Reserved (3 bytes)
+                binWriter.Write((byte)0x00);
+                binWriter.Write((byte)0x00);
+                binWriter.Write((byte)0x00);
+
+                // Data size (sum of all the TAP files data sizes)
+                binWriter.Write((int)prgFiles.Sum(p => p.TapDataSize)); // 4 bytes
+
+                foreach(var file in prgFiles) {
+                    // Read in the TAP file
+                    var tapFileBuf = File.ReadAllBytes(file.TapPath);
+
+                    // Write the TAP file data to the joined TAP file (skipping the TAP header)
+                    binWriter.Write(tapFileBuf, TAP_FILE_HEADER_SIZE, tapFileBuf.Length - TAP_FILE_HEADER_SIZE);
+                }
+            }
+        }
+
+        static bool AskYesOrNo(string question) {
+            ConsoleKeyInfo key;
+
+            ClearConsoleAndWriteLine($"\n{question}");
+
+            do {
+                key = Console.ReadKey(true);
+            }
+            while(key.Key != ConsoleKey.Y && key.Key != ConsoleKey.N);
+
+            return key.Key == ConsoleKey.Y;
         }
 
         static void WaitForKeyAndExit() {
@@ -489,6 +666,8 @@ namespace GyrospeedWin {
         }
 
         static void WritePilotOrTrailer(BinaryWriter binWriter, int length) {
+            prgFileLengthInSeconds += CalculatePulseLengthInSeconds(SHORT_PULSE) * length;
+
             while(length-- > 0) {
                 binWriter.Write(SHORT_PULSE);
             }
@@ -501,34 +680,56 @@ namespace GyrospeedWin {
             binWriter.Write((byte)(clockCycles & 0xff));
             binWriter.Write((byte)((clockCycles >> 8) & 0xff));
             binWriter.Write((byte)((clockCycles >> 16) & 0xff));
+
+            prgFileLengthInSeconds += CalculateClockCyclesInSeconds(clockCycles);
         }
 
         static void WriteNewDataMarker(BinaryWriter binWriter) {
             binWriter.Write(LONG_PULSE);
             binWriter.Write(MEDIUM_PULSE);
+
+            prgFileLengthInSeconds += CalculatePulseLengthInSeconds(LONG_PULSE) + CalculatePulseLengthInSeconds(MEDIUM_PULSE);
         }
 
         static void WriteEndOfDataMarker(BinaryWriter binWriter) {
             binWriter.Write(LONG_PULSE);
             binWriter.Write(SHORT_PULSE);
+
+            prgFileLengthInSeconds += CalculatePulseLengthInSeconds(LONG_PULSE) + CalculatePulseLengthInSeconds(SHORT_PULSE);
         }
 
         static void WriteOnBit(BinaryWriter binWriter) {
             binWriter.Write(MEDIUM_PULSE);
             binWriter.Write(SHORT_PULSE);
+
+            prgFileLengthInSeconds += CalculatePulseLengthInSeconds(MEDIUM_PULSE) + CalculatePulseLengthInSeconds(SHORT_PULSE);
         }
 
         static void WriteOffBit(BinaryWriter binWriter) {
             binWriter.Write(SHORT_PULSE);
             binWriter.Write(MEDIUM_PULSE);
+
+            prgFileLengthInSeconds += CalculatePulseLengthInSeconds(SHORT_PULSE) + CalculatePulseLengthInSeconds(MEDIUM_PULSE);
         }
 
         static void WriteGyrospeedOnBit(BinaryWriter binWriter) {
             binWriter.Write(GYROSPEED_ON_BIT);
+
+            prgFileLengthInSeconds += CalculatePulseLengthInSeconds(GYROSPEED_ON_BIT);
         }
 
         static void WriteGyrospeedOffBit(BinaryWriter binWriter) {
             binWriter.Write(GYROSPEED_OFF_BIT);
+
+            prgFileLengthInSeconds += CalculatePulseLengthInSeconds(GYROSPEED_OFF_BIT);
+        }
+
+        static double CalculatePulseLengthInSeconds(byte data) {
+            return (data * 8) / PAL_CPU_FREQUENCY_IN_HZ;
+        }
+
+        static double CalculateClockCyclesInSeconds(int clockCycles) {
+            return clockCycles / PAL_CPU_FREQUENCY_IN_HZ;
         }
 
         static int FindSys(byte[] buf, int basicStartOffset) {
