@@ -21,8 +21,8 @@ The crunched PRG files should have a BASIC SYS line at $0801 to run the program 
 * Fixes the issue with the original Gyrospeed where it did not clear the keyboard buffer before starting the crunched program
 * Supports processing either a single PRG file or batch processing all PRGs in a given folder (drag and drop)
 * Can automatically build optimised compilation TAP files based on a given cassette tape length in minutes 
-* Supports 10 different loading effects such as the classsic FreeLoad colour cycling from the Ocean Loader, as well an option for randomised effect selection
-* Supports both the standard and clear screen with white-text found message styles
+* Supports 20 different loading effects such as the classsic FreeLoad colour cycling from the Ocean Loader, as well an option for randomised effect selection
+* Supports both the standard and clear screen found message styles, as well as selected or randomised text colour
 * Includes full C# and 6502 assembly sourcecode
 
 ## Screenshots
@@ -30,6 +30,8 @@ The crunched PRG files should have a BASIC SYS line at $0801 to run the program 
 ![gyrospeedwin-help](https://github.com/Stat-Mat/GyrospeedWin/blob/master/gyrospeedwin-help.jpg)
 
 ![gyrospeedwin-processing](https://github.com/Stat-Mat/GyrospeedWin/blob/master/gyrospeedwin-processing.jpg)
+
+![gyrospeedwin-standard-found-message-with-white-text](https://github.com/Stat-Mat/GyrospeedWin/blob/master/gyrospeedwin-standard-found-message-with-white-text.jpg) ![gyrospeedwin-clear-screen-found-message-with-green-text](https://github.com/Stat-Mat/GyrospeedWin/blob/master/gyrospeedwin-clear-screen-found-message-with-green-text.jpg)
 
 ![gyrospeedwin-loading-effect-0](https://github.com/Stat-Mat/GyrospeedWin/blob/master/gyrospeedwin-loading-effect-0.jpg) ![gyrospeedwin-loading-effect-2](https://github.com/Stat-Mat/GyrospeedWin/blob/master/gyrospeedwin-loading-effect-2.jpg)
 

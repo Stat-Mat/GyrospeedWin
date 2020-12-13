@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -34,9 +35,29 @@ namespace GyrospeedWin {
         // The max filename length in the CBM header
         const int CBM_HEADER_MAX_FILENAME_LENGTH = 0x10;
 
-        // These are the characters which can be used in a BASIC string to clear the screen (CHR$(147)) and change the text colour to white (CHR$(5))
-        // They are inserted at the start of the filename in the CBM header to alter the appearance of the found message
-        static readonly byte[] clearScreenAndSetTextColourToWhite = new byte[] { 0x93, 0x05 };
+        // This is the character code which can be used to clear the screen (CHR$(147))
+        // It is inserted at the start of the filename in the CBM header to alter the appearance of
+        // the found message, along with any colour code the user selects from the list below
+        const byte CHR_CODE_CLEAR_SCREEN = 0x93;
+
+        // The mappings for the character codes to change text colour
+        static readonly byte[] chrColourMapping = new byte[] {
+            0x90, // black
+            0x05, // white
+            0x1c, // red
+            0x9f, // cyan
+            0x9c, // purple
+            0x1e, // green
+            0x9e, // yellow
+            0x81, // orange
+            0x95, // brown
+            0x96, // light red
+            0x97, // dark grey
+            0x98, // grey
+            0x99, // light green
+            0x9a, // light blue
+            0x9b  // light grey
+        };
 
         // The CPU frequency on a PAL machine is derived from the PAL C64 VIC-II colour clock frequency of 17.734475 MHz / 18
         const double PAL_CPU_FREQUENCY_IN_HZ = 985248;
@@ -76,13 +97,16 @@ namespace GyrospeedWin {
 
         static int Main(string[] args) {
             int loadingEffectNum = 0;
+            int textColourNum = 0;
             int compilationTapeLength = 0;
 
             bool isFolder = false;
             bool buildCompilationTapFiles = false;
             bool buildIndividualTapFiles = false;
             bool useRandomLoadingEffect = false;
-            bool useClearScreenAndWhiteText = false;
+            bool useRandomTextColour = false;
+
+            List<byte> chrCodePrefix = new List<byte>();
 
             string pathToWriteTapFiles = string.Empty;
             string exePath = GetExecutingDirectory();
@@ -216,14 +240,62 @@ namespace GyrospeedWin {
 
                 // Ask user for their found message style choice
                 ClearConsoleAndWriteLine("\nPlease choose desired found message style:\n");
-                Console.WriteLine("0 - Standard (original)    1 - Clear screen with white text");
+                Console.WriteLine("0 - Standard (original)    1 - Clear screen");
 
                 do {
                     key = Console.ReadKey(true);
                 }
                 while(key.KeyChar < '0' || key.KeyChar > '1');
 
-                useClearScreenAndWhiteText = key.KeyChar == '1';
+                // If the user selected the clear screen found message style, then add the character code for it to the prefix
+                if(key.KeyChar == '1') {
+                    chrCodePrefix.Add(CHR_CODE_CLEAR_SCREEN);
+                }
+
+                // Ask user for their found message text colour choice
+                ClearConsoleAndWriteLine("\nPlease choose desired found message text colour:\n");
+                Console.WriteLine("D - Light Blue (original)\n");
+                Console.WriteLine("0 - Black          5 - Green");
+                Console.WriteLine("1 - White          6 - Yellow");
+                Console.WriteLine("2 - Red            7 - Orange");
+                Console.WriteLine("3 - Cyan           8 - Brown");
+                Console.WriteLine("4 - Purple         9 - Light Red");
+                Console.WriteLine("A - Dark Grey      C - Light Green");
+                Console.WriteLine("B - Grey           E - Light Grey");
+                Console.WriteLine("\nR - use a random colour " + (prgFiles.Length > 1 ? "for each PRG file" : ""));
+
+                do {
+                    key = Console.ReadKey(true);
+
+                    if((key.KeyChar >= '0' && key.KeyChar <= '9') ||
+                        (key.Key >= ConsoleKey.A && key.Key <= ConsoleKey.E) ||
+                        key.Key == ConsoleKey.R) {
+                        // We have a valid selection, so just break out of the infinite loop
+                        break;
+                    }
+                }
+                while(true);
+
+                if(key.Key == ConsoleKey.R) {
+                    useRandomTextColour = true;
+
+                    // Just add a colour code which will be replaced each time we generate a random colour
+                    chrCodePrefix.Add(chrColourMapping[textColourNum]);
+                }
+                else {
+                    if(key.KeyChar <= '9') {
+                        textColourNum = key.KeyChar - '0';
+                    }
+                    else {
+                        textColourNum = (key.Key - ConsoleKey.A) + 10;
+                    }
+
+                    // If the user didn't select the default light blue text colour, then
+                    // append the appropriate character code for their chosen colour
+                    if(textColourNum != 0x9a) {
+                        chrCodePrefix.Add(chrColourMapping[textColourNum]);
+                    }
+                }
 
                 // Read in the CBM header containing the Gyrospeed loader
                 var cbmHeaderBuf = File.ReadAllBytes(Path.Combine(exePath, GYROSPEED_HEADER_FILENAME));
@@ -284,10 +356,24 @@ namespace GyrospeedWin {
 
                     var loadingEffect = LoadingEffects.Styles[loadingEffectNum];
 
-                    // The filename length is determined by whether the user has selected the standard found message, or the clear
-                    // screen with white text. This is because the latter uses two character codes to clear the screen and set the
-                    // text colour to white, therefore only leaving 14 characters for the filename itself. Otherwise allow the full 16.
-                    var fileNameLength = CBM_HEADER_MAX_FILENAME_LENGTH - (useClearScreenAndWhiteText ? clearScreenAndSetTextColourToWhite.Length : 0);
+                    // If the user has selected random text colours, then generate one
+                    if(useRandomTextColour) {
+                        var randomTextColourNum = 0;
+
+                        do {
+                            randomTextColourNum = rnd.Next(0, chrColourMapping.Length);
+                        }
+                        while(randomTextColourNum == textColourNum);
+
+                        textColourNum = randomTextColourNum;
+
+                        // Update the random colour character in the prefix
+                        chrCodePrefix[chrCodePrefix.Count - 1] = chrColourMapping[textColourNum];
+                    }
+
+                    // The filename length is determined by the users choices regarding the found screen style, as both clear screen and
+                    // change text colour take one character each, leaving only 14 or 15 characters left for the actual filename itself.
+                    var fileNameLength = CBM_HEADER_MAX_FILENAME_LENGTH - chrCodePrefix.Count;
 
                     // Strip off the "-[ex]" suffix if present (i.e. if this is a crunched PRG from the OneLoad64 games collection)
                     file.FileNameWithoutExtension = Regex.Replace(Path.GetFileNameWithoutExtension(file.Name), "-\\[ex\\]", "", RegexOptions.IgnoreCase);
@@ -302,20 +388,18 @@ namespace GyrospeedWin {
 
                     var fileNameBytes = Encoding.UTF8.GetBytes(fileNameUpper);
 
-                    if(useClearScreenAndWhiteText) {
-                    	// Add the two character prefix to clear the screen and set the text colour to white
-                        fileNameBytes = clearScreenAndSetTextColourToWhite.Concat(Encoding.UTF8.GetBytes(fileNameUpper)).ToArray();
+                    if(chrCodePrefix.Count > 0) {
+                        // Add the character prefix which can be used to clear the screen and change the text colour
+                        fileNameBytes = chrCodePrefix.Concat(fileNameBytes).ToArray();
                     }
 
                     // Insert the filename into the CBM header
                     Array.Copy(blankingBytes, 0, cbmHeaderBuf, 7, CBM_HEADER_MAX_FILENAME_LENGTH);
                     Array.Copy(fileNameBytes, 0, cbmHeaderBuf, 7, fileNameBytes.Length);
 
-                    // Overwrite the original loading effect if needed
-                    if(loadingEffect != null) {
-                        Array.Copy(blankingBytes, 0, cbmHeaderBuf, GYROSPEED_HEADER_LOADING_EFFECT_ROUTINE_OFFSET, cbmHeaderBuf.Length - GYROSPEED_HEADER_LOADING_EFFECT_ROUTINE_OFFSET);
-                        Array.Copy(loadingEffect, 0, cbmHeaderBuf, GYROSPEED_HEADER_LOADING_EFFECT_ROUTINE_OFFSET, loadingEffect.Length);
-                    }
+                    // Add the loading effect
+                    Array.Copy(blankingBytes, 0, cbmHeaderBuf, GYROSPEED_HEADER_LOADING_EFFECT_ROUTINE_OFFSET, cbmHeaderBuf.Length - GYROSPEED_HEADER_LOADING_EFFECT_ROUTINE_OFFSET);
+                    Array.Copy(loadingEffect, 0, cbmHeaderBuf, GYROSPEED_HEADER_LOADING_EFFECT_ROUTINE_OFFSET, loadingEffect.Length);
 
                     // Calculate the CBM header checksum
                     // Start at index 2 because first two bytes are the load address ($033c)
