@@ -292,7 +292,7 @@ namespace GyrospeedWin {
 
                     // If the user didn't select the default light blue text colour, then
                     // append the appropriate character code for their chosen colour
-                    if(textColourNum != 0x9a) {
+                    if(chrColourMapping[textColourNum] != 0x9a) {
                         chrCodePrefix.Add(chrColourMapping[textColourNum]);
                     }
                 }
